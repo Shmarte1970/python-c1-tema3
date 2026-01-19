@@ -14,18 +14,27 @@ Este ejercicio se enfoca en las operaciones básicas de SQL desde Python sin uti
 """
 
 import sqlite3
-import os
 
 # Ruta de la base de datos (en memoria para este ejemplo)
 # Para una base de datos en archivo, usar: 'biblioteca.db'
-DB_PATH = ':memory:'
+DB_PATH = ":memory:"
+
+
+def _fix_text(text):
+    if isinstance(text, str):
+        try:
+            return text.encode("latin1").decode("utf-8")
+        except UnicodeError:
+            return text
+    return text
+
 
 def crear_conexion():
     """
     Crea y devuelve una conexión a la base de datos SQLite
     """
-    # Implementa la creación de la conexión y retorna el objeto conexión
-    pass
+    return sqlite3.connect(DB_PATH)
+
 
 def crear_tablas(conexion):
     """
@@ -34,69 +43,139 @@ def crear_tablas(conexion):
     - libros: id (entero, clave primaria), titulo (texto, no nulo),
               anio (entero), autor_id (entero, clave foránea a autores.id)
     """
-    # Implementa la creación de tablas usando SQL
-    # Usa conexion.cursor() para crear un cursor y ejecutar comandos SQL
-    pass
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS autores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL
+        );
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS libros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            anio INTEGER,
+            autor_id INTEGER,
+            FOREIGN KEY (autor_id) REFERENCES autores(id)
+        );
+    """)
+
+    conexion.commit()
+
 
 def insertar_autores(conexion, autores):
     """
     Inserta varios autores en la tabla 'autores'
     Parámetro autores: Lista de tuplas (nombre,)
     """
-    # Implementa la inserción de autores usando SQL INSERT
-    # Usa consultas parametrizadas para mayor seguridad
-    pass
+    cursor = conexion.cursor()
+    cursor.executemany("INSERT INTO autores (nombre) VALUES (?)", autores)
+    conexion.commit()
+
 
 def insertar_libros(conexion, libros):
     """
     Inserta varios libros en la tabla 'libros'
     Parámetro libros: Lista de tuplas (titulo, anio, autor_id)
     """
-    # Implementa la inserción de libros usando SQL INSERT
-    # Usa consultas parametrizadas para mayor seguridad
-    pass
+    cursor = conexion.cursor()
+    cursor.executemany(
+        "INSERT INTO libros (titulo, anio, autor_id) VALUES (?, ?, ?)", libros
+    )
+    conexion.commit()
+
 
 def consultar_libros(conexion):
     """
     Consulta todos los libros y muestra título, año y nombre del autor
     """
-    # Implementa una consulta SQL JOIN para obtener libros con sus autores
-    # Imprime los resultados formateados
-    pass
+    cursor = conexion.cursor()
+    cursor.execute("""
+        SELECT libros.titulo, libros.anio, autores.nombre
+        FROM libros
+        JOIN autores ON libros.autor_id = autores.id
+        ORDER BY libros.id;
+    """)
+
+    for titulo, anio, autor in cursor.fetchall():
+        print(f"{_fix_text(titulo)} ({anio}) - {_fix_text(autor)}")
+
 
 def buscar_libros_por_autor(conexion, nombre_autor):
     """
     Busca libros por el nombre del autor
     """
-    # Implementa una consulta SQL con WHERE para filtrar por autor
-    # Retorna una lista de tuplas (titulo, anio)
-    pass
+    cursor = conexion.cursor()
+    cursor.execute("""
+        SELECT libros.titulo, libros.anio, autores.nombre
+        FROM libros
+        JOIN autores ON libros.autor_id = autores.id;
+    """)
+
+    resultados = []
+    nombre_autor_fix = _fix_text(nombre_autor)
+
+    for titulo, anio, autor in cursor.fetchall():
+        if _fix_text(autor) == nombre_autor_fix:
+            resultados.append((_fix_text(titulo), anio))
+
+    return resultados
+
 
 def actualizar_libro(conexion, id_libro, nuevo_titulo=None, nuevo_anio=None):
     """
     Actualiza la información de un libro existente
     """
-    # Implementa la actualización usando SQL UPDATE
-    # Solo actualiza los campos que no son None
-    pass
+    cursor = conexion.cursor()
+    campos = []
+    valores = []
+
+    if nuevo_titulo is not None:
+        campos.append("titulo = ?")
+        valores.append(nuevo_titulo)
+
+    if nuevo_anio is not None:
+        campos.append("anio = ?")
+        valores.append(nuevo_anio)
+
+    if not campos:
+        return
+
+    valores.append(id_libro)
+
+    sql = f"UPDATE libros SET {', '.join(campos)} WHERE id = ?"
+    cursor.execute(sql, valores)
+    conexion.commit()
+
 
 def eliminar_libro(conexion, id_libro):
     """
     Elimina un libro por su ID
     """
-    # Implementa la eliminación usando SQL DELETE
-    pass
+    cursor = conexion.cursor()
+    cursor.execute("DELETE FROM libros WHERE id = ?", (id_libro,))
+    conexion.commit()
+
 
 def ejemplo_transaccion(conexion):
     """
     Demuestra el uso de transacciones para operaciones agrupadas
     """
-    # Implementa una transacción que:
-    # 1. Comience con conexion.execute("BEGIN TRANSACTION")
-    # 2. Realice varias operaciones
-    # 3. Si todo está bien, confirma con conexion.commit()
-    # 4. En caso de error, revierte con conexion.rollback()
-    pass
+    try:
+        conexion.execute("BEGIN TRANSACTION")
+
+        cursor = conexion.cursor()
+        cursor.execute(
+            "INSERT INTO libros (titulo, anio, autor_id) VALUES (?, ?, ?)",
+            ("Libro temporal", 2024, 1),
+        )
+
+        conexion.commit()
+    except sqlite3.Error:
+        conexion.rollback()
+
 
 if __name__ == "__main__":
     try:
@@ -110,7 +189,7 @@ if __name__ == "__main__":
         autores = [
             ("Gabriel García Márquez",),
             ("Isabel Allende",),
-            ("Jorge Luis Borges",)
+            ("Jorge Luis Borges",),
         ]
         insertar_autores(conexion, autores)
         print("Autores insertados correctamente")
@@ -122,7 +201,7 @@ if __name__ == "__main__":
             ("La casa de los espíritus", 1982, 2),
             ("Paula", 1994, 2),
             ("Ficciones", 1944, 3),
-            ("El Aleph", 1949, 3)
+            ("El Aleph", 1949, 3),
         ]
         insertar_libros(conexion, libros)
         print("Libros insertados correctamente")
@@ -138,7 +217,9 @@ if __name__ == "__main__":
             print(f"- {titulo} ({anio})")
 
         print("\n--- Actualización de un libro ---")
-        actualizar_libro(conexion, 1, nuevo_titulo="Cien años de soledad (Edición especial)")
+        actualizar_libro(
+            conexion, 1, nuevo_titulo="Cien años de soledad (Edición especial)"
+        )
         print("Libro actualizado. Nueva información:")
         consultar_libros(conexion)
 
